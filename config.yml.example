@@ -1,0 +1,37 @@
+buderusServer: '192.168.0.1'
+privateKey: 'YOUR_KEY_HERE'
+# or provide these three values
+md5Salt: null
+gatewayPassword: null
+privatePassword: null
+# how often to query values
+intervalSeconds: 60
+# define as many servers as needed
+mqttServers:
+  - server: '192.168.0.2'
+    port: '1883'
+    clientId: 'UNIQUE_ID'
+    user: null
+    password: null
+    secure: false
+    
+services:
+# a message in InfluxDB line format
+- serviceName: '/heatSources/hs1/actualPower'
+  mqttTopic: 'buderus/actualPower'
+  mqttMessage: 'power,type=actualPower value={value_d}'
+  type: 'float'
+  retained: true
+  qos: 1
+
+# just the value
+- serviceName: '/system/sensors/temperatures/return'
+  mqttTopic: 'buderus/temperature/return'
+  mqttMessage: '{value_d}'
+  type: 'float'
+
+# encode the service in the topiv
+- serviceName: '/system/sensors/temperatures/supply_t1'
+  mqttTopic: 'buderus{service}'
+  mqttMessage: '{value_d}'
+  type: 'float'
