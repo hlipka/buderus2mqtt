@@ -119,8 +119,7 @@ public class KM200Comm
                 String statusLine = method.getStatusLine().toString();
                 if (statusLine.contains(" 403 "))
                 {
-                    byte[] test = new byte[1];
-                    return test;
+                    return new byte[1];
                 }
                 else
                 {
@@ -135,13 +134,11 @@ public class KM200Comm
         }
         catch (HttpException e)
         {
-            logger.error("Fatal protocol violation: {}", e);
-            e.printStackTrace();
+            logger.error("Fatal protocol violation: ", e);
         }
         catch (IOException e)
         {
-            logger.error("Fatal transport error: {}", e);
-            e.printStackTrace();
+            logger.error("Fatal transport error: ", e);
         }
         finally
         {

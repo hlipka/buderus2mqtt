@@ -210,6 +210,11 @@ public class Buderus2Mqtt implements Runnable
                 if (service.getType().equals("float"))
                 {
                     Double d = getDoubleValue(_device, _comm, service.getServiceName());
+                    if (null==d)
+                    {
+                        logger.error("Could not get value for service "+ service.getServiceName()+", skipping.");
+                        continue;
+                    }
                     MessageParameters params = new MessageParameters(service.getServiceName(), ServiceType.valueOf(service.getType().toUpperCase(Locale.US)), d);
                     String messageStr = params.replace(service.getMqttMessage());
 
@@ -225,6 +230,23 @@ public class Buderus2Mqtt implements Runnable
                     {
                         for (IMqttClient client : mqttClients)
                         {
+                            if (!client.isConnected())
+                            {
+                                try
+                                {
+                                    client.reconnect();
+                                    if (!client.isConnected())
+                                    {
+                                        logger.error("Could not reconnect to MQTT server " + client.getServerURI());
+                                        continue;
+                                    }
+                                }
+                                catch (MqttException e)
+                                {
+                                    logger.error("Error while reconnecting to MQTT server "+client.getServerURI()+" : ", e);
+                                    continue;
+                                }
+                            }
                             client.publish(finalTopic, message);
                         }
                     }
@@ -245,6 +267,11 @@ public class Buderus2Mqtt implements Runnable
         private Double getDoubleValue(final KM200Device device, final KM200Comm comm, final String service)
         {
             final byte[] data = comm.getDataFromService(device, service);
+            if (null==data)
+            {
+                logger.error("Did not receive any data from KM200 device for service {}", service);
+                return null;
+            }
             String s = comm.decodeMessage(device, data);
             JSONObject nodeRoot = new JSONObject(s);
             return nodeRoot.getDouble("value");
