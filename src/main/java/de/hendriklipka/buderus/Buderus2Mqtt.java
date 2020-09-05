@@ -126,9 +126,10 @@ public class Buderus2Mqtt implements Runnable
         }
 
         KM200Comm comm = new KM200Comm();
-        if (!initDevice(device, comm))
+        comm.connect(device);
+        if (!comm.isConnected())
         {
-            logger.error("Cannot connect to Buderus device at [{}]. Please check configuration.", config.getBuderusServer());
+            logger.error("Cannot connect to Buderus device at [{}]. Please check configuration. Exiting.", config.getBuderusServer());
             System.exit(2);
         }
         logger.info("Connected. Retrieve complete list of services.");
@@ -154,37 +155,6 @@ public class Buderus2Mqtt implements Runnable
         executorService.scheduleAtFixedRate(runnableTask, 1, config.getIntervalSeconds(), TimeUnit.SECONDS);
     }
 
-    private boolean initDevice(final KM200Device device, final KM200Comm comm)
-    {
-        byte[] recData = comm.getDataFromService(device, "/gateway/DateTime");
-        if (recData == null)
-        {
-            logger.error("Communication to Buderus device is not possible, no data received!");
-            return false;
-        }
-        if (recData.length == 0)
-        {
-            logger.error("No reply from KM200!");
-            return false;
-        }
-
-        /* Decrypt the message */
-        String decodedData = comm.decodeMessage(device, recData);
-        if (decodedData == null)
-        {
-            logger.error("Decoding of the KM200 message is not possible!");
-            return false;
-        }
-
-        if (decodedData.equals("SERVICE NOT AVAILABLE"))
-        {
-            logger.error("Error while talking to Buderus device: retrieval of '/gateway/DateTime' returns 'SERVICE NOT AVAILABLE'.");
-            return false;
-        }
-        logger.info("Communication test to the Buderus device was successful.");
-        return true;
-    }
-
     private static class MqttPublisher implements Runnable
     {
 
@@ -204,6 +174,16 @@ public class Buderus2Mqtt implements Runnable
         @Override
         public void run()
         {
+            if (!_comm.isConnected())
+            {
+                _comm.connect(_device);
+                logger.warn("Not connected to KM200 device, trying to reconnect.");
+                if (!_comm.isConnected())
+                {
+                    logger.error("Reconnected failed, skipping.");
+                    return;
+                }
+            }
             logger.debug("Starting MQTT publishing for configured services.");
             for (ServiceMapping service : _mappings)
             {
@@ -273,6 +253,11 @@ public class Buderus2Mqtt implements Runnable
                 return null;
             }
             String s = comm.decodeMessage(device, data);
+            if (null==s)
+            {
+                logger.error("No value from KM200, skipping service {}", service);
+                return null;
+            }
             JSONObject nodeRoot = new JSONObject(s);
             return nodeRoot.getDouble("value");
         }

@@ -56,10 +56,10 @@ public class KM200Comm
 
     private static final Logger logger = LoggerFactory.getLogger(KM200Comm.class);
     private HttpClient client = null;
+    private boolean _connected = false;
 
     public KM200Comm()
     {
-
     }
 
     /**
@@ -135,10 +135,12 @@ public class KM200Comm
         catch (HttpException e)
         {
             logger.error("Fatal protocol violation: ", e);
+            _connected = false;
         }
         catch (IOException e)
         {
             logger.error("Fatal transport error: ", e);
+            _connected = false;
         }
         finally
         {
@@ -164,6 +166,7 @@ public class KM200Comm
         {
             logger.error("Message is not in valid Base64 scheme: {}", e);
             e.printStackTrace();
+            return null;
         }
         try
         {
@@ -370,5 +373,41 @@ public class KM200Comm
             logger.error("Parsingexception in JSON: {} data: {}", e, decodedData);
             e.printStackTrace();
         }
+    }
+
+    public void connect(final KM200Device device)
+    {
+        byte[] recData = getDataFromService(device, "/gateway/DateTime");
+        if (recData == null)
+        {
+            logger.error("Communication to Buderus device is not possible, no data received!");
+            return;
+        }
+        if (recData.length == 0)
+        {
+            logger.error("No reply from KM200!");
+            return;
+        }
+
+        /* Decrypt the message */
+        String decodedData = decodeMessage(device, recData);
+        if (decodedData == null)
+        {
+            logger.error("Decoding of the KM200 message is not possible!");
+            return;
+        }
+
+        if (decodedData.equals("SERVICE NOT AVAILABLE"))
+        {
+            logger.error("Error while talking to Buderus device: retrieval of '/gateway/DateTime' returns 'SERVICE NOT AVAILABLE'.");
+            return;
+        }
+        logger.info("Communication test to the Buderus device was successful.");
+        _connected = true;
+    }
+
+    public boolean isConnected()
+    {
+        return _connected;
     }
 }
