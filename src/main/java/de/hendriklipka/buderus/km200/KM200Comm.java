@@ -105,6 +105,8 @@ public class KM200Comm
 
         // Provide custom retry handler is necessary
         method.getParams().setParameter(HttpMethodParams.RETRY_HANDLER, new DefaultHttpMethodRetryHandler(3, false));
+        method.getParams().setParameter(HttpMethodParams.SO_TIMEOUT, 30*1000);
+        method.getParams().setParameter(HttpMethodParams.HEAD_BODY_CHECK_TIMEOUT, 30*1000);
         // Set the right header
         method.setRequestHeader("Accept", "application/json");
         method.addRequestHeader("User-Agent", "TeleHeater/2.2.3");

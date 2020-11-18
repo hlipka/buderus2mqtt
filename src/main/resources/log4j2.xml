@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Configuration status="WARN">
     <Appenders>
-        <File name="LogFile" fileName="buderus2mqtt.log">
+        <RollingFile name="LogFile" fileName="buderus2mqtt.log"
+                     filePattern="buderus2mqtt_%d{dd-MMM}.log.gz">
             <PatternLayout>
-                <Pattern>%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n</Pattern>
+                <Pattern>%d{DEFAULT} [%t] %-5level %logger{36} - %msg%n</Pattern>
             </PatternLayout>
-        </File>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1"/>
+            </Policies>
+        </RollingFile>
+        <DefaultRolloverStrategy max="90"/>
         <Async name="Async">
             <AppenderRef ref="LogFile"/>
         </Async>
@@ -14,8 +19,10 @@
         </Console>
     </Appenders>
     <Loggers>
-        <Root level="info">
-            <AppenderRef ref="Console" threshold="warn"/>
+        <Root level="debug">
+            <AppenderRef ref="Console" threshold="warn">
+                <ThresholdFilter level="warn"/>
+            </AppenderRef>
             <AppenderRef ref="Async"/>
         </Root>
     </Loggers>

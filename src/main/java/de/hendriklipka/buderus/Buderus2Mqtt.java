@@ -176,12 +176,16 @@ public class Buderus2Mqtt implements Runnable
         {
             if (!_comm.isConnected())
             {
-                _comm.connect(_device);
                 logger.warn("Not connected to KM200 device, trying to reconnect.");
+                _comm.connect(_device);
                 if (!_comm.isConnected())
                 {
                     logger.error("Reconnected failed, skipping.");
                     return;
+                }
+                else
+                {
+                    logger.warn("reconnect succeeded.");
                 }
             }
             logger.debug("Starting MQTT publishing for configured services.");
