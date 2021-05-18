@@ -218,6 +218,14 @@ public class Buderus2Mqtt implements Runnable
                             {
                                 try
                                 {
+                                    try
+                                    {
+                                        client.disconnect();
+                                    }
+                                    catch (MqttException e)
+                                    {
+                                        logger.warn("tried to disconnect first, got an error",e);
+                                    }
                                     client.reconnect();
                                     if (!client.isConnected())
                                     {
