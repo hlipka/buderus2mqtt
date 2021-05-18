@@ -6,11 +6,16 @@
  * user guide available at https://docs.gradle.org/4.4.1/userguide/tutorial_java_projects.html
  */
 
+plugins {
+    id 'application'
+    id 'java'
+}
+
 // Apply the java plugin to add support for Java
-apply plugin: 'java'
+//apply plugin: 'java'
 
 // Apply the application plugin to add support for building an application
-apply plugin: 'application'
+//apply plugin: 'application'
 
 // In this section you declare where to find the dependencies of your project
 repositories {
@@ -21,22 +26,27 @@ repositories {
 
 dependencies {
     // This dependency is found on compile classpath of this component and consumers.
-    compile 'com.google.guava:guava:23.0'
-    compile 'org.apache.commons:commons-lang3:3.3.2'
-    compile 'org.apache.logging.log4j:log4j-api:2.13.0'
-    compile 'org.apache.logging.log4j:log4j-core:2.13.0'
-    compile 'org.apache.logging.log4j:log4j-slf4j-impl:2.13.0'
-    compile 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.2'
-    compile 'org.yaml:snakeyaml:1.26'
-    compile 'org.json:json:20200518'
-    compile 'jakarta.xml.bind:jakarta.xml.bind-api:2.3.2'
-    compile 'org.glassfish.jaxb:jaxb-runtime:2.3.2'
-    compile 'commons-httpclient:commons-httpclient:3.1'
-    compile 'info.picocli:picocli:3.9.6'
+    implementation 'com.google.guava:guava:23.0'
+    implementation 'org.apache.commons:commons-lang3:3.3.2'
+    implementation 'org.apache.logging.log4j:log4j-api:2.13.0'
+    implementation 'org.apache.logging.log4j:log4j-core:2.13.0'
+    implementation 'org.apache.logging.log4j:log4j-slf4j-impl:2.13.0'
+    implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.2'
+    implementation 'org.yaml:snakeyaml:1.26'
+    implementation 'org.json:json:20200518'
+    implementation 'jakarta.xml.bind:jakarta.xml.bind-api:2.3.2'
+    implementation 'org.glassfish.jaxb:jaxb-runtime:2.3.2'
+    implementation 'commons-httpclient:commons-httpclient:3.1'
+    implementation 'info.picocli:picocli:3.9.6'
+
+    implementation 'org.jolokia:jolokia-jvm:1.6.2:agent'
 
     // Use JUnit test framework
-    testCompile 'junit:junit:4.12'
+    testImplementation 'junit:junit:4.12'
 }
 
 // Define the main class for the application
-mainClassName = 'de.hendriklipka.buderus.Buderus2Mqtt'
+application {
+    mainClass = 'de.hendriklipka.buderus.Buderus2Mqtt'
+    applicationDefaultJvmArgs = ['-javaagent:lib/jolokia-jvm-1.6.2-agent.jar=port=7777,host=localhost,discoveryEnabled=false']
+}
