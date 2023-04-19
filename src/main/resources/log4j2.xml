@@ -9,8 +9,8 @@
             <Policies>
                 <TimeBasedTriggeringPolicy interval="1"/>
             </Policies>
+            <DefaultRolloverStrategy max="50"/>
         </RollingFile>
-        <DefaultRolloverStrategy max="90"/>
         <Async name="Async">
             <AppenderRef ref="LogFile"/>
         </Async>
@@ -20,7 +20,7 @@
     </Appenders>
     <Loggers>
         <Root level="debug">
-            <AppenderRef ref="Console" threshold="warn">
+            <AppenderRef ref="Console">
                 <ThresholdFilter level="warn"/>
             </AppenderRef>
             <AppenderRef ref="Async"/>

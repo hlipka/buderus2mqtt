@@ -1,5 +1,3 @@
-package de.hendriklipka.buderus.km200;
-
 /**
  * Copyright (c) 2010-2020 Contributors to the openHAB project
  * <p>
@@ -12,9 +10,13 @@ package de.hendriklipka.buderus.km200;
  * <p>
  * SPDX-License-Identifier: EPL-2.0
  */
+package de.hendriklipka.buderus.km200;
+
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -28,12 +30,19 @@ import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.httpclient.DefaultHttpMethodRetryHandler;
-import org.apache.commons.httpclient.HttpClient;
-import org.apache.commons.httpclient.HttpException;
-import org.apache.commons.httpclient.HttpStatus;
-import org.apache.commons.httpclient.methods.GetMethod;
-import org.apache.commons.httpclient.params.HttpMethodParams;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.config.ConnectionConfig;
+import org.apache.hc.client5.http.impl.DefaultHttpRequestRetryStrategy;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.core5.http.*;
+import org.apache.hc.core5.net.URIBuilder;
+import org.apache.hc.core5.util.TimeValue;
+import org.apache.hc.core5.util.Timeout;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -44,7 +53,6 @@ import com.google.common.io.ByteStreams;
 
 /**
  * This class was taken from the OpenHAB 1.x Buderus / KM200 binding, and modified to run without the OpenHAB infrastructure. Not needed code was removed.
- *
  * The KM200Comm class does the communication to the device and does any encryption/decryption/converting jobs
  *
  * @author Markus Eckhardt
@@ -55,8 +63,16 @@ public class KM200Comm
 {
 
     private static final Logger logger = LoggerFactory.getLogger(KM200Comm.class);
-    private HttpClient client = null;
     private boolean _connected = false;
+
+    final PoolingHttpClientConnectionManager cm = PoolingHttpClientConnectionManagerBuilder.create()
+            .setConnectionConfigResolver(route -> ConnectionConfig.custom()
+                    .setConnectTimeout(Timeout.ofSeconds(30))
+                    .setSocketTimeout(Timeout.ofSeconds(30))
+                    .setValidateAfterInactivity(TimeValue.ofSeconds(15))
+                    .setTimeToLive(TimeValue.ofMinutes(1))
+                    .build())
+            .build();
 
     public KM200Comm()
     {
@@ -76,78 +92,91 @@ public class KM200Comm
     }
 
     /**
-     * This function adds zero padding to a byte array.
-     */
-    public static byte[] addZeroPadding(byte[] bdata, int bSize, String cSet) throws UnsupportedEncodingException
-    {
-        int encrypt_padchar = bSize - (bdata.length % bSize);
-        byte[] padchars = new String(new char[encrypt_padchar]).getBytes(cSet);
-        byte[] padded_data = new byte[bdata.length + padchars.length];
-        System.arraycopy(bdata, 0, padded_data, 0, bdata.length);
-        System.arraycopy(padchars, 0, padded_data, bdata.length, padchars.length);
-        return padded_data;
-    }
-
-    /**
      * This function does the GET http communication to the device
      */
     public byte[] getDataFromService(KM200Device device, String service)
     {
         byte[] responseBodyB64 = null;
         // Create an instance of HttpClient.
-        if (client == null)
+        try (CloseableHttpClient client = HttpClients.custom()
+                .setConnectionManager(cm)
+                .setRetryStrategy(new DefaultHttpRequestRetryStrategy(3, TimeValue.ofSeconds(10)))
+                .build())
         {
-            client = new HttpClient();
-        }
 
-        // Create a method instance.
-        GetMethod method = new GetMethod("http://" + device.getIP4Address() + service);
+            // Create a method instance.
+            HttpGet method = new HttpGet("http://" + device.getIP4Address() + service);
 
-        // Provide custom retry handler is necessary
-        method.getParams().setParameter(HttpMethodParams.RETRY_HANDLER, new DefaultHttpMethodRetryHandler(3, false));
-        method.getParams().setParameter(HttpMethodParams.SO_TIMEOUT, 30*1000);
-        method.getParams().setParameter(HttpMethodParams.HEAD_BODY_CHECK_TIMEOUT, 30*1000);
-        // Set the right header
-        method.setRequestHeader("Accept", "application/json");
-        method.addRequestHeader("User-Agent", "TeleHeater/2.2.3");
 
-        try
-        {
-            // Execute the method.
-            int statusCode = client.executeMethod(method);
-            // Check the status and the forbidden 403 Error.
-            if (statusCode != HttpStatus.SC_OK)
+            CloseableHttpResponse response = null;
+            try
             {
-                String statusLine = method.getStatusLine().toString();
-                if (statusLine.contains(" 403 "))
+                URI uri = new URIBuilder(method.getUri())
+                        .addParameter("param1", "value1")
+                        .addParameter("param2", "value2")
+                        .build();
+                method.setUri(uri);
+                // Set the right header
+                method.setHeader("Accept", "application/json");
+                method.addHeader("User-Agent", "TeleHeater/2.2.3");
+
+                // Execute the method.
+                response = client.execute(method);
+                int statusCode = response.getCode();
+                // Check the status and the forbidden 403 Error.
+                if (statusCode != HttpStatus.SC_OK)
                 {
-                    return new byte[1];
+                    String statusLine = response.getReasonPhrase();
+                    if (statusLine.contains(" 403 "))
+                    {
+                        return new byte[1];
+                    }
+                    else
+                    {
+                        logger.error("HTTP GET failed: {}", response.getReasonPhrase());
+                        return null;
+                    }
                 }
-                else
+                final HttpEntity entity = response.getEntity();
+                String contentTypeStr = response.getFirstHeader("Content-type").getValue();
+                if (StringUtils.isNotEmpty(contentTypeStr))
                 {
-                    logger.error("HTTP GET failed: {}", method.getStatusLine());
-                    return null;
+                    ContentType contentType = ContentType.parse(contentTypeStr);
+                    device.setCharSet(contentType.getCharset().name());
+                }
+                // Read the response body.
+                responseBodyB64 = ByteStreams.toByteArray(entity.getContent());
+
+            }
+            catch (IOException e)
+            {
+                logger.error("Fatal transport error: ", e);
+                _connected = false;
+            }
+            catch (URISyntaxException e)
+            {
+                logger.error("Error building connect URI: ", e);
+                _connected = false;
+            }
+            finally
+            {
+                // Release the connection.
+                try
+                {
+                    if (null!=response)
+                    {
+                        response.close();
+                    }
+                }
+                catch (IOException e)
+                {
+                    logger.error("Error while closing connection to Buderus server: ", e);
                 }
             }
-            device.setCharSet(method.getResponseCharSet());
-            // Read the response body.
-            responseBodyB64 = ByteStreams.toByteArray(method.getResponseBodyAsStream());
-
-        }
-        catch (HttpException e)
-        {
-            logger.error("Fatal protocol violation: ", e);
-            _connected = false;
         }
         catch (IOException e)
         {
-            logger.error("Fatal transport error: ", e);
-            _connected = false;
-        }
-        finally
-        {
-            // Release the connection.
-            method.releaseConnection();
+            logger.error("Error while creating HTTP client: e");
         }
         return responseBodyB64;
     }
@@ -157,8 +186,8 @@ public class KM200Comm
      */
     public String decodeMessage(KM200Device device, byte[] encoded)
     {
-        String retString = null;
-        byte[] decodedB64 = null;
+        String retString;
+        byte[] decodedB64;
 
         try
         {
@@ -166,7 +195,7 @@ public class KM200Comm
         }
         catch (Exception e)
         {
-            logger.error("Message is not in valid Base64 scheme: {}", e);
+            logger.error("Message is not in valid Base64 scheme: ", e);
             e.printStackTrace();
             return null;
         }
@@ -191,7 +220,7 @@ public class KM200Comm
                 | NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException e)
         {
             // failure to authenticate
-            logger.error("Exception on encoding: {}", e);
+            logger.error("Exception on encoding: ", e);
             return null;
         }
     }
@@ -201,18 +230,18 @@ public class KM200Comm
      */
     public void initObjects(KM200Device device, String service)
     {
-        String id = null, type = null, decodedData = null;
-        Integer writeable = 0;
-        Integer recordable = 0;
-        JSONObject nodeRoot = null;
-        KM200CommObject newObject = null;
+        String id, type, decodedData = null;
+        int writeable = 0;
+        int recordable = 0;
+        JSONObject nodeRoot;
+        KM200CommObject newObject;
         logger.debug("Init: {}", service);
         if (device.blacklistMap.contains(service))
         {
             logger.debug("Service on blacklist: {}", service);
             return;
         }
-        byte[] recData = getDataFromService(device, service.toString());
+        byte[] recData = getDataFromService(device, service);
         try
         {
             if (recData == null)
@@ -250,14 +279,14 @@ public class KM200Comm
             /* Check the service features and set the flags */
             if (nodeRoot.has("writeable"))
             {
-                Integer val = nodeRoot.getInt("writeable");
-                logger.debug(val.toString());
+                int val = nodeRoot.getInt("writeable");
+                logger.debug(Integer.toString(val));
                 writeable = val;
             }
             if (nodeRoot.has("recordable"))
             {
-                Integer val = nodeRoot.getInt("recordable");
-                logger.debug(val.toString());
+                int val = nodeRoot.getInt("recordable");
+                logger.debug(Integer.toString(val));
                 recordable = val;
             }
             logger.debug("Typ: {}", type);
@@ -265,107 +294,104 @@ public class KM200Comm
             newObject = new KM200CommObject(id, type, writeable, recordable);
 
             /* Check whether the type is a single value containing a string value */
-            if (type.equals("stringValue"))
+            switch (type)
             {
-                Object valObject = null;
-                logger.debug("initDevice: type string value: {}", decodedData.toString());
-                valObject = new String(nodeRoot.getString("value"));
-                newObject.setValue(valObject);
-                if (nodeRoot.has("allowedValues"))
+                case "stringValue":
                 {
-                    List<String> valParas = new ArrayList<String>();
-                    JSONArray paras = nodeRoot.getJSONArray("allowedValues");
-                    for (int i = 0; i < paras.length(); i++)
+                    Object valObject;
+                    logger.debug("initDevice: type string value: {}", decodedData);
+                    valObject = nodeRoot.getString("value");
+                    newObject.setValue(valObject);
+                    if (nodeRoot.has("allowedValues"))
                     {
-                        String subJSON = (String) paras.get(i);
-                        valParas.add(subJSON);
+                        List<String> valParas = new ArrayList<>();
+                        JSONArray paras = nodeRoot.getJSONArray("allowedValues");
+                        for (int i = 0; i < paras.length(); i++)
+                        {
+                            String subJSON = (String) paras.get(i);
+                            valParas.add(subJSON);
+                        }
+                        newObject.setValueParameter(valParas);
                     }
-                    newObject.setValueParameter(valParas);
+                    device.serviceMap.put(id, newObject);
+
+                    break;
                 }
-                device.serviceMap.put(id, newObject);
+                case "floatValue":
+                { /* Check whether the type is a single value containing a float value */
+                    Object valObject;
+                    logger.debug("initDevice: type float value: {}", decodedData);
+                    valObject = (float) nodeRoot.getDouble("value");
+                    newObject.setValue(valObject);
+                    if (nodeRoot.has("minValue") && nodeRoot.has("maxValue"))
+                    {
+                        List<Float> valParas = new ArrayList<>();
+                        valParas.add((float) nodeRoot.getDouble("minValue"));
+                        valParas.add((float) nodeRoot.getDouble("maxValue"));
+                        newObject.setValueParameter(valParas);
+                    }
+                    device.serviceMap.put(id, newObject);
 
-            }
-            else if (type
-                    .equals("floatValue"))
-            { /* Check whether the type is a single value containing a float value */
-                Object valObject = null;
-                logger.debug("initDevice: type float value: {}", decodedData.toString());
-                valObject = new Float(nodeRoot.getDouble("value"));
-                newObject.setValue(valObject);
-                if (nodeRoot.has("minValue") && nodeRoot.has("maxValue"))
-                {
-                    List<Float> valParas = new ArrayList<Float>();
-                    valParas.add(new Float(nodeRoot.getDouble("minValue")));
-                    valParas.add(new Float(nodeRoot.getDouble("maxValue")));
-                    newObject.setValueParameter(valParas);
+                    break;
                 }
-                device.serviceMap.put(id, newObject);
+                case "switchProgram":  /* Check whether the type is a switchProgram */
+                    logger.debug("initDevice: type switchProgram {}", decodedData);
+                    newObject.setValue(decodedData);
+                    device.serviceMap.put(id, newObject);
+                    /* have to be completed */
 
-            }
-            else if (type.equals("switchProgram"))
-            { /* Check whether the type is a switchProgram */
-                logger.debug("initDevice: type switchProgram {}", decodedData.toString());
-                newObject.setValue(decodedData.toString());
-                device.serviceMap.put(id, newObject);
-                /* have to be completed */
+                    break;
+                case "errorList":  /* Check whether the type is a errorList */
+                    logger.debug("initDevice: type errorList: {}", decodedData);
+                    JSONArray errorValues = nodeRoot.getJSONArray("values");
+                    newObject.setValue(errorValues);
+                    /* have to be completed */
 
-            }
-            else if (type.equals("errorList"))
-            { /* Check whether the type is a errorList */
-                logger.debug("initDevice: type errorList: {}", decodedData.toString());
-                JSONArray errorValues = nodeRoot.getJSONArray("values");
-                newObject.setValue(errorValues);
-                /* have to be completed */
+                    break;
+                case "refEnum":  /* Check whether the type is a refEnum */
+                    logger.debug("initDevice: type refEnum: {}", decodedData);
+                    device.serviceMap.put(id, newObject);
+                    JSONArray refers = nodeRoot.getJSONArray("references");
+                    for (int i = 0; i < refers.length(); i++)
+                    {
+                        JSONObject subJSON = refers.getJSONObject(i);
+                        id = subJSON.getString("id");
+                        initObjects(device, id);
+                    }
 
-            }
-            else if (type.equals("refEnum"))
-            { /* Check whether the type is a refEnum */
-                logger.debug("initDevice: type refEnum: {}", decodedData.toString());
-                device.serviceMap.put(id, newObject);
-                JSONArray refers = nodeRoot.getJSONArray("references");
-                for (int i = 0; i < refers.length(); i++)
-                {
-                    JSONObject subJSON = refers.getJSONObject(i);
-                    id = subJSON.getString("id");
-                    initObjects(device, id);
-                }
+                    break;
+                case "moduleList":  /* Check whether the type is a moduleList */
+                    logger.debug("initDevice: type moduleList: {}", decodedData);
+                    device.serviceMap.put(id, newObject);
+                    JSONArray vals = nodeRoot.getJSONArray("values");
+                    for (int i = 0; i < vals.length(); i++)
+                    {
+                        JSONObject subJSON = vals.getJSONObject(i);
+                        id = subJSON.getString("id");
+                        initObjects(device, id);
+                    }
 
-            }
-            else if (type.equals("moduleList"))
-            { /* Check whether the type is a moduleList */
-                logger.debug("initDevice: type moduleList: {}", decodedData.toString());
-                device.serviceMap.put(id, newObject);
-                JSONArray vals = nodeRoot.getJSONArray("values");
-                for (int i = 0; i < vals.length(); i++)
-                {
-                    JSONObject subJSON = vals.getJSONObject(i);
-                    id = subJSON.getString("id");
-                    initObjects(device, id);
-                }
+                    break;
+                case "yRecording":  /* Check whether the type is a yRecording */
+                    logger.debug("initDevice: type yRecording: {}", decodedData);
+                    device.serviceMap.put(id, newObject);
+                    /* have to be completed */
 
-            }
-            else if (type.equals("yRecording"))
-            { /* Check whether the type is a yRecording */
-                logger.debug("initDevice: type yRecording: {}", decodedData.toString());
-                device.serviceMap.put(id, newObject);
-                /* have to be completed */
+                    break;
+                case "systeminfo":  /* Check whether the type is a systeminfo */
+                    logger.debug("initDevice: type systeminfo: {}", decodedData);
+                    JSONArray sInfo = nodeRoot.getJSONArray("values");
+                    newObject.setValue(sInfo);
+                    device.serviceMap.put(id, newObject);
+                    /* have to be completed */
 
-            }
-            else if (type.equals("systeminfo"))
-            { /* Check whether the type is a systeminfo */
-                logger.debug("initDevice: type systeminfo: {}", decodedData.toString());
-                JSONArray sInfo = nodeRoot.getJSONArray("values");
-                newObject.setValue(sInfo);
-                device.serviceMap.put(id, newObject);
-                /* have to be completed */
-
-            }
-            else
-            { /* Unknown type */
-                logger.info("initDevice: type unknown for service: {}",
-                        service.toString() + "Data:" + decodedData.toString());
-                newObject.setValue(decodedData);
-                device.serviceMap.put(id, newObject);
+                    break;
+                default:  /* Unknown type */
+                    logger.info("initDevice: type unknown for service: {}",
+                            service + "Data:" + decodedData);
+                    newObject.setValue(decodedData);
+                    device.serviceMap.put(id, newObject);
+                    break;
             }
         }
         catch (

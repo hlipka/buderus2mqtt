@@ -58,7 +58,7 @@ public class MessageParameters
         }
     }
 
-    // pattern: {address} {value_i} {value_d} {value_s} {value_b}
+    // pattern: {service} {value_i} {value_d} {value_s} {value_b}
     public String replace(String message)
     {
         String result = message;

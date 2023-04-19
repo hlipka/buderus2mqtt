@@ -5,6 +5,7 @@ import de.hendriklipka.buderus.km200.KM200Device;
 import de.hendriklipka.buderus.km200.KM200ServiceTypes;
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.paho.client.mqttv3.*;
+import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.eclipse.paho.client.mqttv3.persist.MqttDefaultFilePersistence;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -86,7 +87,8 @@ public class Buderus2Mqtt implements Runnable
             IMqttClient mqttClient = null;
             try
             {
-                MqttDefaultFilePersistence persistence = new MqttDefaultFilePersistence(temp.getAbsolutePath());
+                MemoryPersistence persistence = new MemoryPersistence();
+
                 mqttClient = new MqttClient(connectURI, serverConfig.getClientId(), persistence);
                 MqttConnectOptions options = new MqttConnectOptions();
                 options.setAutomaticReconnect(true);
@@ -224,7 +226,15 @@ public class Buderus2Mqtt implements Runnable
                                     }
                                     catch (MqttException e)
                                     {
-                                        logger.warn("tried to disconnect first, got an error",e);
+                                        logger.warn("tried to disconnect first, got an error. Will try a force disconnect.",e);
+                                        try
+                                        {
+                                            client.disconnectForcibly(100, 100);
+                                        }
+                                        catch (MqttException ex)
+                                        {
+                                            logger.warn("Forced disconnect failed, got an error.", e);
+                                        }
                                     }
                                     client.reconnect();
                                     if (!client.isConnected())
